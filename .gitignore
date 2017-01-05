@@ -1,0 +1,6 @@
+*.pyc
+*.sqlite3
+*.log
+migrations/
+migrations_b/
+static2/
