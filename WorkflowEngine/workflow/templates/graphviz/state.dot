@@ -1,0 +1,18 @@
+{% load i18n %}
+    state{{s.id}} [
+        {% if s.state_type == 2 %}
+            shape=box,
+        {% elif s.state_type == 3 %}
+            shape=polygon, sides=4, orientation=45,            
+        {% endif %} 
+
+        {% if s.get_status == "undo" %}
+            fillcolor="grey", style=filled,
+        {% elif s.get_status == "processing" %}
+            fillcolor="red", style=filled,
+        {% else %}
+            fillcolor="green", style=filled,
+        {% endif %}
+
+        label="{{s.name}}"
+        ]

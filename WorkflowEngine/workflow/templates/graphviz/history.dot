@@ -1,0 +1,5 @@
+{% load i18n %}
+    struct{{h.id}} [
+        shape=box,
+        label="{{h.state.name}} \n {% for r in h.records.all %} {{r.participant.executor}} {{r.note}} \n{% endfor %}"
+        ]

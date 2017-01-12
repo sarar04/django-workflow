@@ -1,0 +1,47 @@
+/*
+A definition for a diagram of the workflow: {{ workflow.name }}
+
+Description: 
+{% if workflow.description %}{{workflow.description}}{% else %}None{% endif %}
+
+Created for use with graphviz (http://www.graphviz.org) by the Django workflow
+application (http://github.com/ntoll/workflow/tree/master)
+*/
+digraph G {
+    rankdir=LR;
+    subgraph cluster_level2 {
+    label="Level 2"
+        label="workflowhistory"
+        {% for h in workflow.workflowactivity.history.all %}
+        {% include "graphviz/history.dot" %}
+        {% endfor %}
+  }
+    subgraph cluster_level1 {
+    label="Level 1"    
+        label="workflow"
+        {% for s in workflow.states.all %}
+        {% include "graphviz/state.dot" %}
+        {% endfor %}
+
+        {% for t in workflow.transitions.all %}
+        {% include "graphviz/transition.dot" %}
+        {% endfor %}   
+    }
+}
+/*digraph G {
+    rankdir=LR;
+    subgraph graph1 {
+        {% for s in workflow.states.all %}
+        {% include "graphviz/state.dot" %}
+        {% endfor %}
+
+        {% for t in workflow.transitions.all %}
+        {% include "graphviz/transition.dot" %}
+        {% endfor %}
+    }
+    subgraph graph2 {
+        {% for h in workflow.workflowactivity.history.all %}
+        {% include "graphviz/history.dot" %}
+        {% endfor %}
+    }
+}*/
