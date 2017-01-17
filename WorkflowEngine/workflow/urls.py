@@ -7,18 +7,25 @@ from django.contrib import admin
 from . import views
 
 urlpatterns = [
+    # create workflow step by step
     url(r'^workflow/$', views.WorkflowListView.as_view()),
+    url(r'^workflow/(?P<pk>[0-9]+)$', views.WorkflowDetailView.as_view(), name="template-detail"),
+    url(r'^workflow/(?P<pk>[0-9]+)/state/$', views.StateListView.as_view(), name='template-states'),
+    url(r'^state/(?P<pk>[0-9]+)$', views.StateDetailView.as_view()),
+    url(r'^workflow/(?P<pk>[0-9]+)/transition/$', views.TransitionListView.as_view(), name='template-transitions'),
+    url(r'^transition/(?P<pk>[0-9]+)$', views.TransitionDetailView.as_view()),
+
+    # create workflow at a time
     url(r'^workflow/whole/$', views.WorkflowWholeparameterView.as_view()),
     url(r'^workflow/file/$', views.WorkflowFileView.as_view()),
-    url(r'^workflow/(?P<pk>[0-9]+)$', views.WorkflowDetailView.as_view(), name="template-detail"),
-    url(r'^workflow/(?P<pk>[0-9]+)/png/$', views.WorkflowDetailPngView.as_view(), name="template-png"),
-    url(r'^workflow/(?P<pk>[0-9]+)/state/$', views.StateListView.as_view(), name='template-states'),
-    url(r'^workflow/(?P<pk>[0-9]+)/transition/$', views.TransitionListView.as_view(), name='template-transitions'),
+    
+    # change status of workflow
     url(r'^workflow/(?P<pk>[0-9]+)/status/$', views.WorkflowStatusView.as_view(), name='template-status'),
+    
+    # workflow preview
+    url(r'^workflow/(?P<pk>[0-9]+)/png/$', views.WorkflowDetailPngView.as_view(), name="template-png"),
 
 
-    url(r'^state/(?P<pk>[0-9]+)$', views.StateDetailView.as_view()),
-    url(r'^transition/(?P<pk>[0-9]+)$', views.TransitionDetailView.as_view()),
 
 
     url(r'^workflowactivity/$', views.WorkflowActivityListView.as_view()),

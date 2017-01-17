@@ -26,4 +26,5 @@ error_list = {
     'parameter_error'               :         ['400020',      'Parameter error, see doc for help'],   # 参数错误
     'state_workflow_not_match'      :         ['400021',      'Create transition between from_state and to_state which not match workflow'],
     'invalid_condition_json'        :         ['400022',      'Invalid condition json, workflow cannot route'], # 流转条件错误
+    'invalid_action'                :         ['400023',      'Invalid state action.']
 }

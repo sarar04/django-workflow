@@ -68,6 +68,8 @@ class WorkflowWholeparameterView(generics.ListCreateAPIView):
         ---
         omit_serializer: true
         """
+        return Execute_func(functions.create_workflow_wholeparam(request.data))
+
         serializer = serializers.WorkflowWholeParamSerializer(data=request.data)
         if not serializer.is_valid():
             raise BadRequest(error_list['parameter_error'], serializer.errors)

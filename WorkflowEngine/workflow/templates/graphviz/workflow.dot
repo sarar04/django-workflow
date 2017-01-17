@@ -8,12 +8,12 @@ Created for use with graphviz (http://www.graphviz.org) by the Django workflow
 application (http://github.com/ntoll/workflow/tree/master)
 */
 digraph G {
-    rankdir=LR;
+    /*rankdir=LR;*/
     subgraph cluster_level2 {
     label="Level 2"
         label="workflowhistory"
         {% for h in workflow.workflowactivity.history.all %}
-        {% include "graphviz/history.dot" %}
+    /*    {% include "graphviz/history.dot" %}*/
         {% endfor %}
   }
     subgraph cluster_level1 {

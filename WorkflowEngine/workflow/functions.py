@@ -20,6 +20,12 @@ from errors import BadRequest
 from error_list import error_list
 
 from logger import logger
+def create_workflow_wholeparam():
+    pass
+
+def create_workflow_byfile():
+    pass
+
 
 def get_dotfile(workflow, current_state):
     """
@@ -78,8 +84,8 @@ def create_workflow(data, user):
     workflowobj.status = 1
     workflowobj.save()
 
-    if not workflowobj.cloned_from:
-        return workflowobj
+    # if not workflowobj.cloned_from:
+    #     return workflowobj
 
     states_model = workflowobj.states.all()
     index = 0
@@ -104,6 +110,12 @@ def create_workflow_by_file(filename, user):
     except Exception, e:
         # os.remove('./workflow/'+filename+'.py')
         raise BadRequest(error_list['parameter_error'], str(e))
+
+def create_workflowactivity(data):
+    serializer = serializers.WorkflowActivityPostSerializer(data=data)
+    if serializer.is_valid():
+        return True, serializer.save()
+    return False, serializer.errors
 
 def change_workflow_status(wf_instance, oldstatus, newstatus):
     if int(newstatus)==int(models.Workflow.ACTIVE):

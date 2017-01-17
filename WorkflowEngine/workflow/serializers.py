@@ -11,33 +11,22 @@ from rest_framework.serializers import ValidationError
 from workflow import models
 from workflow import myserializers
 
-# create workflow by whole parameter
 class WorkflowPostSerializer(myserializers.ModelSerializer):
     class Meta:
         model = models.Workflow
-        fields = ('id', 'name', 'description', 'creator', 'token')
+        fields = ('id', 'name', 'description', 'status', 'creator', 'token')
 
 class StatePostSerializer(myserializers.ModelSerializer):
-    auto_end = serializers.BooleanField(required=False, default=False, 
-        help_text='if you are use sequence to control workflow, exclude this field, \
-        otherwise include this field')
-
     class Meta:
         model = models.State
-        fields = ('id', 'name', 'description', 
-            'roles', 'allow_delegation', 'allow_abolish', 'allow_state_edit', 
-            'deadline_warning', 'auto_end', 'remark', 'auto_end', 'relation', 
-            'state_type', 'participants', 'deadline', 'callback')
-
-
-
-
+        fields = ('id', 'name', 'description', 'roles', 'allow_delegation', 
+            'allow_abolish', 'allow_state_edit', 'deadline_warning', 'remark', 
+            'relation', 'state_type', 'deadline', 'callback')
 
 class TransitionPostSerializer(myserializers.ModelSerializer):
     class Meta:
         model = models.Transition
-        fields = ('id', 'name', 'from_state', 'to_state', 'callback', 
-            'condition')
+        fields = ('id', 'name', 'from_state', 'to_state', 'callback', 'condition')
 
 
 class ParticipantSimpleSerializer(serializers.ModelSerializer):

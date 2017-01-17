@@ -3,7 +3,11 @@
         {% if s.state_type == 2 %}
             shape=box,
         {% elif s.state_type == 3 %}
-            shape=polygon, sides=4, orientation=45,            
+            shape=polygon, sides=4, orientation=45,
+        {% elif s.state_type == 4 %}
+            shape = polygon, side = 4, distortion = -.7
+        {% elif s.state_type == 5 %}
+            shape = polygon, side = 4, distortion = .4
         {% endif %} 
 
         {% if s.get_status == "undo" %}
@@ -14,5 +18,5 @@
             fillcolor="green", style=filled,
         {% endif %}
 
-        label="{{s.name}}"
+        label="{{s.name}} {{s.id}}"
         ]

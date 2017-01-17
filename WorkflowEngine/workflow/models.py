@@ -163,6 +163,10 @@ class Workflow(models.Model):
             clone_state.pk = None
             clone_state.workflow = clone_workflow
             clone_state.save()
+            for p in s.participants.all():
+                participant = Participant.objects.create(executor=p.executor)
+                clone_state.participants.add(participant)
+            clone_state.save()
             state_dict[s.id] = clone_state
         
         # Clone the transitions
@@ -214,6 +218,21 @@ class Participant(models.Model):
     def __unicode__(self):
         return 'participant-%d' % self.id
 
+def resolve_queryset(queryset, state, exclude):
+    if not queryset:
+        return exclude
+    new_state = queryset.filter(state=state)[0].transition.to_state
+    newqueryset = queryset.exclude(created_on__gte=queryset.filter(state=new_state)[0].created_on)
+    newqueryset = get_difference_set(queryset, newqueryset)
+    exclude |= queryset.filter(state=state)
+    return resolve_queryset(newqueryset, new_state, exclude)
+
+def get_difference_set(seta, setb):
+    differ = seta
+    for elem in setb:
+        differ = differ.exclude(pk=elem.id)
+    return differ
+
 class State(models.Model):
     name = models.CharField(_('Name'), max_length=255)
     description = models.TextField(_('Description'), blank=True)
@@ -258,23 +277,59 @@ class State(models.Model):
         return list(set(action_list))
 
     def get_status(self):
+        # solution 1
         try:
             if self.workflow.workflowactivity.status==WorkflowActivity.COMPLETE and \
                 self.state_type == self.END_STATE:
                 return 'finish'
-
-            histories = self.workflow.workflowactivity.history.order_by('-created_on')
+            if self in self.workflow.workflowactivity.current_state():
+                return 'processing'
+            histories = self.workflow.workflowactivity.history.all().order_by('created_on')
             queryset = WorkflowHistory.objects.none()
             for h in histories:
-                if h.state.state_type==State.START_STATE:
-                    queryset |= histories.filter(pk=h.id)
-                    break
+                if queryset.filter(state=h.state):
+                    newqueryset = queryset.exclude(created_on__gte=queryset.filter(state=h.state)[0].created_on)
+                    newqueryset = get_difference_set(queryset, newqueryset)
+                    exclude = queryset.filter(pk=-1)
+                    exclude |= resolve_queryset(newqueryset, h.state, exclude)
+                    queryset = get_difference_set(queryset, exclude)
+                    queryset = queryset.exclude(created_on__gte=queryset.filter(state=h.state)[0].created_on)
                 queryset |= histories.filter(pk=h.id)
             if queryset.filter(state=self):
-                return queryset.filter(state=self)[0].status
+                return queryset.get(state=self).status
             else:
                 return 'undo'
-        except:
+        except Exception, e:
+            print e
+            return 'undo'
+
+        # solution 2 has some problem
+        try:
+            if self.workflow.workflowactivity.status==WorkflowActivity.COMPLETE and \
+                self.state_type == self.END_STATE:
+                return 'finish'
+            status = self.workflow.workflowactivity.history.filter(state=self).order_by('-created_on')[0].status
+            histories = self.workflow.workflowactivity.history.order_by('-created_on')
+            queryset = WorkflowHistory.objects.none()
+            reject = False
+            for index, h in enumerate(histories):
+                if index == 0:
+                    queryset |= histories.filter(pk=h.id)
+                    continue 
+                if h.state==histories[0].state:
+                    # queryset |= histories.filter(pk=h.id)
+                    reject = True
+                    break
+                queryset |= histories.filter(pk=h.id)
+            if reject==True and queryset.filter(state=self):
+                if self == histories[0].state:
+                    return queryset.filter(state=self)[0].status
+                else:
+                    return "undo"
+            else:
+                return status
+        except Exception, e:
+            print e
             return 'undo'
 
     def auto_route(self):
@@ -285,14 +340,20 @@ class State(models.Model):
                 field = t.condition.get('field')
                 operator = t.condition.get('operator')
                 value = t.condition.get('value')
-                subject = self.workflow.workflowactivity.subject
-                if operator == "<=" and subject.get(field)<=value:
+                field_value = self.workflow.workflowactivity.subject.get(field, 0)
+                if operator == "<=" and field_value<=value:
                     routes.append(t)
                     continue
-                elif operator == ">" and subject.get(field)>value:
+                elif operator == "<" and field_value<value:
                     routes.append(t)
                     continue
-                elif operator == "=" and subject.get(field)==value:
+                elif operator == ">=" and field_value>=value:
+                    routes.append(t)
+                    continue
+                elif operator == ">" and field_value>value:
+                    routes.append(t)
+                    continue
+                elif operator == "=" and field_value==value:
                     routes.append(t)
                     continue
         if routes:
@@ -344,7 +405,7 @@ class Transition(models.Model):
 
 class Record(models.Model):
     participant = models.ForeignKey(Participant, related_name='record')
-    # processing and others(state.action)
+    # processing/delegate and others(state.action)
     action = models.CharField(max_length=255)
     note = models.TextField()
     attachment = JSONField(blank=True, null=True)
@@ -436,8 +497,6 @@ class WorkflowActivity(models.Model):
 
     def commit(self, creator):
         # check creator
-        print creator
-        print self.creator
         if creator != self.creator:
             error = error_list['only_creator_allowed']
             logger.info(error)
@@ -505,7 +564,7 @@ class WorkflowActivity(models.Model):
             elif to_state.state_type==State.JOINT_STATE:
                 intotrans = to_state.transitions_into.all()
                 for t in intotrans:
-                    if t.from_state.get_status() in ['undo', 'progressing']:
+                    if t.from_state.get_status() in ['undo', 'processing']:
                         return True, None
                 wh = WorkflowHistory(
                         workflowactivity=self,
@@ -547,6 +606,9 @@ class WorkflowActivity(models.Model):
     def log_event(self, state, executor, action, note='', attachment=None):
         if state.get_status() != 'processing':
             return False, error_list['only_progress_allowed']
+
+        if action not in state.get_actions():
+            return False, error_list['invalid_action']
 
         # 是否执行人
         participant_obj = self.get_state_participant_by_executor(
@@ -746,7 +808,7 @@ class WorkflowActivity(models.Model):
         return self.name
 
     class Meta:
-        ordering = ['-completed_on', '-created_on']
+        ordering = ['-created_on']
         verbose_name = _('Workflow Activity')
         verbose_name_plural = _('Workflow Activites')
         permissions = (
