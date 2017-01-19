@@ -27,7 +27,7 @@ class WorkflowListView(generics.ListCreateAPIView):
     """
     permission_classes = (IsAuthenticated,)
     queryset = models.Workflow.objects.all()
-    serializer_class = serializers.WorkflowPostSerializer
+    serializer_class = serializers.WorkflowSerializer
     
     def get_queryset(self):
         queryset = models.Workflow.objects.filter(
@@ -38,13 +38,43 @@ class WorkflowListView(generics.ListCreateAPIView):
             return queryset.filter(status=query)
         return queryset
 
-    def get_serializer_class(self):
-        if self.request.method=='GET':
-            return serializers.WorkflowSimpleSerializer
-        return self.serializer_class
-
     def perform_create(self, serializer):
         serializer.save(belong_to=self.request.user)
+
+class WorkflowDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    流程模板详情: retrieve, update or delete
+    """
+    permission_classes = (IsAuthenticated,)
+    queryset = models.Workflow.objects.all()
+    serializer_class = serializers.WorkflowSerializer
+
+    def get_queryset(self):
+        return models.Workflow.objects.filter(
+            belong_to=self.request.user,
+            cloned_from=None)
+    def get_serializer_class(self):
+        if self.request.method=='GET':
+            return serializers.WorkflowDetailSerializer
+        return self.serializer_class
+
+    def check_permission(self, instance):
+        if instance.status != models.Workflow.DEFINITION:
+            raise BadRequest(error_list['only_definition_allowed'])
+        if instance.cloned_from:
+            raise BadRequest(error_list['only_template_allowed'])
+        if instance.belong_to != self.request.user:
+            raise Http403('Only belong_to user can modified')
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        self.check_permission(instance)
+        instance = serializer.save()
+
+    def perform_destroy(self, instance):
+        self.check_permission(instance)
+        instance.delete()
+
 
 class WorkflowWholeparameterView(generics.ListCreateAPIView):
     permission_classes = (IsAuthenticated,)
@@ -53,27 +83,22 @@ class WorkflowWholeparameterView(generics.ListCreateAPIView):
 
     def get(self, request, *args, **kwargs):
         """
-        获取参数示例,后缀含有_json的字段,若非空建议用json字符串
-        # callback_json若非空则必须为json字符串,会做格式检查
         ---
         omit_serializer: true
         """
-        from templates.flow_templates.sequence import data
+        from workflow.test import data
         return Response(data)
 
     def post(self, request, *args, **kwargs):
         """
         完整参数模式创建工作流模板: 参数格式见get方法返回结果     
-        # callback_json若非空则必须为json字符串,会做格式检查
         ---
         omit_serializer: true
         """
-        return Execute_func(functions.create_workflow_wholeparam(request.data))
-
         serializer = serializers.WorkflowWholeParamSerializer(data=request.data)
         if not serializer.is_valid():
             raise BadRequest(error_list['parameter_error'], serializer.errors)
-        workflow = serializer.save(creator=request.user)
+        workflow = serializer.save(belong_to=request.user)
         serializer = serializers.WorkflowDetailSerializer(workflow)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -81,7 +106,7 @@ class WorkflowFileView(generics.ListCreateAPIView):
     """上传导入方式创建工作流模板"""
     permission_classes = (IsAuthenticated,)
     queryset = []
-    serializer_class = serializers.WorkflowInputSerializer
+    serializer_class = serializers.WorkflowFileSerializer
 
     def file_iterator(self, file_name, chunk_size=512):
         with open(file_name) as f:
@@ -114,7 +139,7 @@ class WorkflowFileView(generics.ListCreateAPIView):
 
     def post(self, request, *args, **kwargs):
         """上传.py文件导入模板"""
-        serializer = serializers.WorkflowInputSerializer(data=request.data)
+        serializer = serializers.WorkflowFileSerializer(data=request.data)
         if not serializer.is_valid():
             raise BadRequest(error_list['parameter_error'], serializer.errors)
         validated_data = serializer.validated_data
@@ -122,40 +147,7 @@ class WorkflowFileView(generics.ListCreateAPIView):
         serializer = serializers.WorkflowDetailSerializer(workflow)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-class WorkflowDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    流程模板详情: retrieve, update or delete
-    """
-    permission_classes = (IsAuthenticated,)
-    queryset = models.Workflow.objects.all()
-    serializer_class = serializers.WorkflowPostSerializer
-    # lookup_field = 'id'
 
-    def get_queryset(self):
-        return models.Workflow.objects.filter(
-            belong_to=self.request.user,
-            cloned_from=None)
-    def get_serializer_class(self):
-        if self.request.method=='GET':
-            return serializers.WorkflowDetailSerializer
-        return self.serializer_class
-
-    def check_permission(self, instance):
-        if instance.status != models.Workflow.DEFINITION:
-            raise BadRequest(error_list['only_definition_allowed'])
-        if instance.cloned_from:
-            raise BadRequest(error_list['only_template_allowed'])
-        if instance.belong_to != self.request.user:
-            raise Http403('Only belong_to user can modified')
-
-    def perform_update(self, serializer):
-        instance = self.get_object()
-        self.check_permission(instance)
-        instance = serializer.save()
-
-    def perform_destroy(self, instance):
-        self.check_permission(instance)
-        instance.delete()
 
 class WorkflowDetailPngView(generics.RetrieveAPIView):
     """
@@ -190,7 +182,7 @@ class StateListView(generics.ListCreateAPIView):
     """
     permission_classes = (IsAuthenticated,)
     queryset = models.State.objects.all()
-    serializer_class = serializers.StatePostSerializer
+    serializer_class = serializers.StateSerializer
 
     def get_queryset(self):
         return models.State.objects.filter(workflow__id=int(self.kwargs['pk']))
@@ -211,12 +203,7 @@ class StateDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     permission_classes = (IsAuthenticated,)
     queryset = models.State.objects.all()
-    serializer_class = serializers.StatePostSerializer
-
-    def get_serializer_class(self):
-        if self.request.method=='GET':
-            return serializers.StateDetailSerializer
-        return self.serializer_class
+    serializer_class = serializers.StateSerializer
 
     def check_permission(self, instance):
         if instance.workflow.status != models.Workflow.DEFINITION:
@@ -242,7 +229,7 @@ class TransitionListView(generics.ListCreateAPIView):
     """
     permission_classes = (IsAuthenticated,)
     queryset = models.Transition.objects.all()
-    serializer_class = serializers.TransitionPostSerializer
+    serializer_class = serializers.TransitionModelSerializer
 
     def get_queryset(self):
         return models.Transition.objects.filter(workflow__id=self.kwargs['pk'])
@@ -267,7 +254,7 @@ class TransitionDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     permission_classes = (IsAuthenticated,)
     queryset = models.Transition.objects.all()
-    serializer_class = serializers.TransitionPostSerializer
+    serializer_class = serializers.TransitionModelSerializer
 
     def check_permission(self, instance):
         if instance.workflow.status != models.Workflow.DEFINITION:
@@ -294,7 +281,7 @@ class WorkflowStatusView(generics.RetrieveUpdateAPIView):
 
     def get_serializer_class(self):
         if self.request.method=='GET':
-            return serializers.WorkflowSimpleSerializer
+            return serializers.WorkflowSerializer
         return self.serializer_class
 
     def perform_update(self, serializer):
@@ -305,12 +292,9 @@ class WorkflowStatusView(generics.RetrieveUpdateAPIView):
         if instance.belong_to != self.request.user:
             raise Http403('only belong_to user can modified')
 
-        success, instance = change_workflow_status(
-            wf_instance=instance,
-            oldstatus=instance.status,
-            newstatus=self.request.data['status'])
+        success, result = instance.change_status(serializer.validated_data['status'])
         if not success:
-            raise ValidationError(instance)
+            raise ValidationError(result)
 
 
 
@@ -323,12 +307,12 @@ class WorkflowActivityListView(generics.ListCreateAPIView):
         queryset = models.WorkflowActivity.objects.filter(
             workflow__belong_to=self.request.user)
         query = self.request.GET.get('status', -1)
-        executor_json = self.request.GET.get('executor_json')
+        executor = self.request.GET.get('executor')
         search = self.request.GET.get('search')
         if query!=-1:
             queryset = queryset.filter(status=query)
-        if executor_json:
-            queryset = queryset.filter(history__records__participant__executor_json=executor_json)
+        if executor:
+            queryset = queryset.filter(history__records__participant__executor__contains=executor)
         if search:
             queryset = queryset.filter(Q(name__contains=search) | 
                 Q(real_start_time__contains=search) |
@@ -349,48 +333,6 @@ class WorkflowActivityDetailView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.method=='GET':
             return serializers.WorkflowActivityDetailSerializer
         return self.serializer_class
-
-class WorkflowActivityStateListView(generics.ListAPIView):
-    permission_classes = (IsAuthenticated,)
-    queryset = []
-    serializer_class = serializers.StateDetailSerializer
-
-    def get_queryset(self):
-        return models.State.objects.filter(
-            workflow__workflowactivity__id=int(self.kwargs['pk']))
-
-class WorkflowActivityStateDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = (IsAuthenticated,)
-    queryset = models.State.objects.all()
-    serializer_class = serializers.StateDetailSerializer
-
-    def put(self, request, ppk, pk):
-        instance = self.get_object()
-        serializer = serializers.WorkflowActivityStatePatchSerializer(
-            data=request.data)
-        serializer.is_valid(raise_exception=True)
-        serializer.update(instance, serializer.validated_data)
-        return Response(serializers.StateDetailSerializer(instance).data)
-    # def get_serializer_class(self):
-    #     if self.request.method!='GET':
-    #         return serializers.WorkflowActivityStatePatchSerializer
-    #     return serializers.StateDetailSerializer
-
-    # def perform_update(self, serializer):
-    #     instance = self.get_object()
-    #     if instance.workflow.workflowactivity.status>=models.WorkflowActivity.ABOLISHED:
-    #         raise ValidationError('wrong status, cannot edit')
-    #     return super(WorkflowActivityStateDetailView, self).perform_update(serializer)
-
-class WorkflowActivityTransitionListView(generics.ListAPIView):
-    permission_classes = (IsAuthenticated,)
-    queryset = []
-    serializer_class = serializers.TransitionPostSerializer
-
-    def get_queryset(self):
-        return models.Transition.objects.filter(
-            workflow__workflowactivity__id=int(self.kwargs['pk']))
-
 
 class WorkflowActivityCommitView(generics.RetrieveUpdateAPIView):
     permission_classes = (IsAuthenticated,)
@@ -424,6 +366,20 @@ class WorkflowActivityStartView(generics.RetrieveUpdateAPIView):
         if not success:
             raise BadRequest(result)
 
+class WorkflowActivityStateDetailView(generics.RetrieveUpdateAPIView):
+    permission_classes = (IsAuthenticated,)
+    queryset = models.State.objects.all()
+    serializer_class = serializers.StateSerializer
+
+    def put(self, request, ppk, pk):
+        instance = self.get_object()
+        serializer = serializers.WorkflowActivityStatePatchSerializer(
+            data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.update(instance, serializer.validated_data)
+        return Response(serializers.StateSerializer(instance).data)
+
+
 class WorkflowActivityLogeventView(generics.ListCreateAPIView):
     permission_classes = (IsAuthenticated,)
     queryset = models.WorkflowActivity.objects.all()
@@ -455,20 +411,6 @@ class WorkflowActivityLogeventView(generics.ListCreateAPIView):
                 raise ValidationError(result)
         else:
             raise BadRequest(error_list['parameter_error'])
-        # data = request.data
-        # success, result, progress = functions.logevent(wa_instance=instance, 
-        #     executor_json=data['executor_json'], pass_flag=self.pass_flag, 
-        #     note=data['note'], attachment_json=data['attachment_json'], 
-        #     condition_json=data.get('condition_json', 'no_condition_json'))
-        # if not success:
-        #     raise BadRequest(result)
-        # instance = self.get_object()
-        # serializer = serializers.WorkflowActivityDetailSerializer(instance)
-        # data = serializer.data
-        # return Response(data, status=status.HTTP_201_CREATED)
-
-class WorkflowActivityRejectView(WorkflowActivityLogeventView):
-    pass_flag = False
 
 class WorkflowActivityAbolishView(generics.RetrieveUpdateAPIView):
     permission_classes = (IsAuthenticated,)
@@ -489,7 +431,7 @@ class WorkflowActivityAbolishView(generics.RetrieveUpdateAPIView):
 class WorkflowActivityDelegateView(generics.ListCreateAPIView):
     permission_classes = (IsAuthenticated,)
     queryset = models.WorkflowActivity.objects.all()
-    serializer_class = serializers.WorkflowSimpleSerializer
+    serializer_class = serializers.DelegateSerializer
 
     def get_object(self):
         instance = models.WorkflowActivity.objects.get(pk=self.kwargs['pk'])
@@ -502,17 +444,14 @@ class WorkflowActivityDelegateView(generics.ListCreateAPIView):
 
     def post(self, request, *arg, **kwargs):
         instance = self.get_object()
-        executor_json = request.data.get('executor_json')
-        delegator_json = request.data.get('delegator_json')
-        reason = request.data.get('reason')
-        attachment_json = request.data.get('attachment_json')
-
-        if not delegator_json or not executor_json:
-            msg = 'executor_json and delegator_json need'
-            return Response(msg, status=status.HTTP_400_BAD_REQUEST)
-        succ, result = instance.delegation(user_json=executor_json,
-            delegator_json=delegator_json, reason=reason, 
-            attachment_json=attachment_json)
+        serializer = serializers.DelegateSerializer(data=request.data)
+        if not serializer.is_valid():
+            raise BadRequest(error_list['parameter_error'], serializer.errors)
+        state = instance.workflow.states.filter(pk=serializer.validated_data['state'])
+        if not state:
+            raise BadRequest(error_list['parmeter_error'], 'invalid state')
+        serializer.validated_data['state'] = state[0]
+        succ, result = instance.delegation(**serializer.validated_data)
         if not succ:
             raise BadRequest(result)
         instance = self.get_object()
@@ -524,11 +463,9 @@ class ParticipantTaskView(generics.ListAPIView):
     queryset = []
     serializer_class = serializers.WorkflowActivitySimpleSerializer
 
-    def get(self, request, *arg, **kwargs):
-        executor_json = self.request.GET.get('executor_json')
-        if not executor_json:
-            return Response('executor_json need', status=status.HTTP_400_BAD_REQUEST)
-        tasks = functions.get_participant_task_data(executor_json, request.user)
+    def post(self, request, *arg, **kwargs):
+        tasks = functions.get_participant_current_task(executor=request.data, 
+            belong_to=request.user)
         return Response(tasks)
 
 class HistoryPngView(generics.ListAPIView):
@@ -548,24 +485,45 @@ class HistoryPngView(generics.ListAPIView):
         response.write(proc.communicate(functions.get_history_dotfile(histories).encode('utf8'))[0])
         return response
 
-# ---------------------------------------------------------------------------
-class WorkflowActivityStatusView(generics.RetrieveUpdateAPIView):
-    permission_classes = (IsAuthenticated,)
-    queryset = models.WorkflowActivity.objects.all()
-    serializer_class = serializers.StatusSerializer
 
-    def get_serializer_class(self):
-        if self.request.method=='GET':
-            return serializers.WorkflowActivitySimpleSerializer
-        return self.serializer_class
+# class WorkflowActivityStateListView(generics.ListAPIView):
+#     permission_classes = (IsAuthenticated,)
+#     queryset = []
+#     serializer_class = serializers.StateDetailSerializer
 
-    def perform_update(self, serializer):
-        from functions import change_workflowactivity_status
-        instance = self.get_object()
+#     def get_queryset(self):
+#         return models.State.objects.filter(
+#             workflow__workflowactivity__id=int(self.kwargs['pk']))
 
-        success, instance = change_workflowactivity_status(
-            wa_instance=instance,
-            oldstatus=instance.status,
-            newstatus=self.request.data['status'])
-        if not success:
-            raise ValidationError(instance)
+# class WorkflowActivityTransitionListView(generics.ListAPIView):
+#     permission_classes = (IsAuthenticated,)
+#     queryset = []
+#     serializer_class = serializers.TransitionPostSerializer
+
+#     def get_queryset(self):
+#         return models.Transition.objects.filter(
+#             workflow__workflowactivity__id=int(self.kwargs['pk']))
+
+
+
+# # ---------------------------------------------------------------------------
+# class WorkflowActivityStatusView(generics.RetrieveUpdateAPIView):
+#     permission_classes = (IsAuthenticated,)
+#     queryset = models.WorkflowActivity.objects.all()
+#     serializer_class = serializers.StatusSerializer
+
+#     def get_serializer_class(self):
+#         if self.request.method=='GET':
+#             return serializers.WorkflowActivitySimpleSerializer
+#         return self.serializer_class
+
+#     def perform_update(self, serializer):
+#         from functions import change_workflowactivity_status
+#         instance = self.get_object()
+
+#         success, instance = change_workflowactivity_status(
+#             wa_instance=instance,
+#             oldstatus=instance.status,
+#             newstatus=self.request.data['status'])
+#         if not success:
+#             raise ValidationError(instance)

@@ -181,10 +181,9 @@ class Workflow(models.Model):
         return clone_workflow
 
     def change_status(self, sstatus):
-        if not self.is_valid():
+        if (sstatus==self.ACTIVE) and (not self.is_valid()):
             return False, self.errors
-        if sstatus not in STATUS_CHOICE_LIST:
-            return False, 'invalid status'
+
         self.status = sstatus
         self.save()
         return True, None
@@ -669,21 +668,22 @@ class WorkflowActivity(models.Model):
         else:
             return True, workflowhistory
 
-    def delegation(self, user, delegator, reason='', attachment=None, 
+    def delegation(self, state, executor, delegator, note='', attachment=None, 
         repeat=False):
-        current_state = self.current_state()
+        if state not in self.current_state():
+            return False, 'invalid state'
         
         # 1.允许委托
-        if not current_state.state.allow_delegation:
+        if not state.allow_delegation:
             error = error_list['delegate_denied']
             logger.info(error)
             return False, error
 
         # 2.无效的委托者
-        participants = current_state.state.participants.all()
+        participants = state.participants.all()
         participant = None
         for p in participants:
-            if user==p.executor:
+            if executor==p.executor:
                 participant = p
                 break
         if not participant:
@@ -721,8 +721,7 @@ class WorkflowActivity(models.Model):
             participant.save()
         else:
             new_participant = Participant.objects.create(executor=delegator)
-            state = current_state.state
-            state.participants = state.participants.exclude(executor=user)
+            state.participants = state.participants.exclude(executor=executor)
             state.participants.add(new_participant)
             state.save()
             participant.delegate_to = new_participant
@@ -732,11 +731,11 @@ class WorkflowActivity(models.Model):
         record = Record.objects.create(
             participant=participant.copy(),
             action='delegate',
-            note=reason,
+            note=note,
             attachment=attachment
         )
         # update workflowhistory
-        wh = current_state
+        wh = state.workflowhistory_set.all()[0]
         wh.records.add(record)
         wh.save()
         return True, self

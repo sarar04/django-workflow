@@ -1,5 +1,6 @@
 Django==1.10
 djangorestframework==3.5
+libpq-dev
 psycopg2 >= 2.5
 django-rest-swagger
 markdown

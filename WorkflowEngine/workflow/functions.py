@@ -20,12 +20,62 @@ from errors import BadRequest
 from error_list import error_list
 
 from logger import logger
-def create_workflow_wholeparam():
-    pass
+def create_workflow_wholeparam(data, belong_to):
+    states = data['states']
+    transitions = data['transitions']
+    workflow = data['workflow']
+    
+    # validation
+    wo_serializer = serializers.WorkflowSerializer(data=workflow)
+    states_serializer = serializers.StateSerializer(data=states, many=True)
+    if not wo_serializer.is_valid():
+        raise BadRequest(error_list['parameter_error'], wo_serializer.errors)
+    if not states_serializer.is_valid():
+        raise BadRequest(error_list['parameter_error'], states_serializer.errors)
 
-def create_workflow_byfile():
-    pass
+    states_name_list = [ elem['name'] for elem in states ]
+    for elem in transitions:
+        if elem['from_state'] not in states_name_list or elem['to_state'] not in states_name_list:
+            raise BadRequest(error_list['parameter_error'], 
+                'from_state or to_state of transition error')
 
+    workflowobj = wo_serializer.save(belong_to=belong_to)
+    states_serializer.save(workflow=workflowobj)
+    states_query = workflowobj.states.all()
+    try:
+        for elem in transitions:
+            models.Transition.objects.create(
+                name=elem['name'],
+                from_state=states_query.get(name=elem['from_state']),
+                to_state=states_query.get(name=elem['to_state']),
+                callback=elem.get('callback'),
+                condition=elem.get('condition'),
+                workflow=workflowobj)
+    except Exception, e:
+        raise BadRequest(error_list['parameter_error'])
+
+    errors = None
+    if not workflowobj.is_valid():
+        errors = workflowobj.errors
+    if errors and workflowobj.status==1:
+        workflowobj.status = 0
+        workflowobj.save()
+
+    if not data.get('template'):
+        workflowobj.cloned_from = workflowobj
+        workflowobj.save()
+
+    states_model = workflowobj.states.all()
+    index = 0
+    for state in states_model:
+        participants = states[index].get('participants', [])
+        index += 1
+        if participants:
+            state.participants.clear()
+            for p in participants:
+                state.participants.add(models.Participant.objects.create(executor=p))
+            state.save()
+    return workflowobj
 
 def get_dotfile(workflow, current_state):
     """
@@ -41,97 +91,34 @@ def get_history_dotfile(histories):
     t = loader.get_template('graphviz/histories.dot')
     return t.render(c)
     
-def create_workflow(data, user):
-    states = data['states']
-    transitions = data['transitions']
-    workflow = data['workflow']
- 
-    # validation
-    wo_serializer = serializers.WorkflowPostSerializer(data=workflow)
-    states_serializer = serializers.StatePostSerializer(data=states, many=True)
-    if not wo_serializer.is_valid():
-        raise BadRequest(error_list['parameter_error'], wo_serializer.errors)
-    if not states_serializer.is_valid():
-        raise BadRequest(error_list['parameter_error'], states_serializer.errors)
-
-    states_name_list = [ elem['name'] for elem in states ]
-    for elem in transitions:
-        if elem['from_state'] not in states_name_list or elem['to_state'] not in states_name_list:
-            raise BadRequest(error_list['parameter_error'], 
-                'from_state or to_state of transition error')
-
-    workflowobj = wo_serializer.save(belong_to=user)
-    states_serializer.save(workflow=workflowobj)
-    states_query = workflowobj.states.all()
-    try:
-        for elem in transitions:
-            models.Transition.objects.create(
-                name=elem['name'],
-                from_state=states_query.get(name=elem['from_state']),
-                to_state=states_query.get(name=elem['to_state']),
-                callback=elem.get('callback'),
-                condition=elem.get('condition'),
-                workflow=workflowobj)
-    except Exception, e:
-        raise BadRequest(error_list['parameter_error'])
-    if not workflowobj.is_valid():
-        errors = workflowobj.errors
-        workflowobj.delete()
-        raise BadRequest(error_list['parameter_error'], errors)
-    if not workflow.get('template'):
-        workflowobj.cloned_from = workflowobj
-        workflowobj.save()
-    workflowobj.status = 1
-    workflowobj.save()
-
-    # if not workflowobj.cloned_from:
-    #     return workflowobj
-
-    states_model = workflowobj.states.all()
-    index = 0
-    for state in states_model:
-        participants = states[index].get('participants', [])
-        index += 1
-        if participants:
-            state.participants.clear()
-            for p in participants:
-                state.participants.add(models.Participant.objects.create(executor=p))
-            state.save()
-    return workflowobj
-
 def create_workflow_by_file(filename, user):
     try:
         cmd = 'from %s import data' % filename
         exec(cmd)
         data['workflow']['template'] = True
-        workflowobj = create_workflow(data, user)
-        # os.remove('./workflow/'+filename+'.py')
+        workflowobj = create_workflow_wholeparam(data, user)
+        os.remove('./workflow/'+filename+'.py')
         return workflowobj
     except Exception, e:
-        # os.remove('./workflow/'+filename+'.py')
+        os.remove('./workflow/'+filename+'.py')
         raise BadRequest(error_list['parameter_error'], str(e))
 
-def create_workflowactivity(data):
-    serializer = serializers.WorkflowActivityPostSerializer(data=data)
-    if serializer.is_valid():
-        return True, serializer.save()
-    return False, serializer.errors
+def get_participant_current_task(executor, belong_to):
+    print type(executor)
+    states = models.State.objects.filter(
+        workflow__belong_to=belong_to,
+        workflow__cloned_from__isnull=False,
+        workflow__workflowactivity__status=models.WorkflowActivity.EXECUTE,
+        participants__executor=executor).distinct()
+    print states.count()
+    exclude = models.State.objects.none()
+    # for state in states:
+    #     if state.get_status() != 'processing':
+    #         exclude |= models.State.objects.filter(pk=state.id)
+    # states = states.exclude(exclude)
+    # print states.count()
+    return serializers.TaskSerializer(states, many=True).data
 
-def change_workflow_status(wf_instance, oldstatus, newstatus):
-    if int(newstatus)==int(models.Workflow.ACTIVE):
-        success, result = wf_instance.activate()
-        return success, result
-    wf_instance.status = int(newstatus)
-    wf_instance.save()
-    return True, wf_instance
-
-def change_workflowactivity_status(wa_instance, oldstatus, newstatus):
-    if int(newstatus)==int(models.WorkflowActivity.COMMIT):
-        success, result = wa_instance.start()
-        return success, result
-    wa_instance.status = int(newstatus)
-    wa_instance.save()
-    return True, wf_instance
 
 def get_user_delegate_task(executor, belong_to):
     return models.State.objects.filter(
@@ -209,7 +196,14 @@ def get_participant_task_data(executor, belong_to):
     task['completed'] = serializers.TaskSerializer(task['completed'], many=True).data
     task['delegate'] = serializers.TaskSerializer(task['delegate'], many=True).data
     return task
-    
+
+def change_workflowactivity_status(wa_instance, oldstatus, newstatus):
+    if int(newstatus)==int(models.WorkflowActivity.COMMIT):
+        success, result = wa_instance.start()
+        return success, result
+    wa_instance.status = int(newstatus)
+    wa_instance.save()
+    return True, wf_instance
 
 if __name__ == '__main__':
     from django.contrib.auth.models import User
