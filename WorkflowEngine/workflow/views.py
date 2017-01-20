@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.db.models import Q
 
 from rest_framework import generics, status
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.serializers import ValidationError
@@ -458,10 +459,10 @@ class WorkflowActivityDelegateView(generics.ListCreateAPIView):
         serializer = serializers.WorkflowActivityDetailSerializer(instance)
         return Response(serializer.data)
 
-class ParticipantTaskView(generics.ListAPIView):
-    permission_classes = (IsAuthenticated,)
-    queryset = []
-    serializer_class = serializers.WorkflowActivitySimpleSerializer
+class ParticipantTaskView(APIView):
+    # permission_classes = (IsAuthenticated,)
+    # queryset = []
+    # serializer_class = serializers.WorkflowActivitySimpleSerializer
 
     def post(self, request, *arg, **kwargs):
         tasks = functions.get_participant_current_task(executor=request.data, 

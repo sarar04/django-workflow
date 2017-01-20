@@ -23,7 +23,7 @@ urlpatterns = [
     url(r'^workflow/(?P<pk>[0-9]+)/status/$', views.WorkflowStatusView.as_view(), name='template-status'),
     
     # workflow preview
-    # url(r'^workflow/(?P<pk>[0-9]+)/png/$', views.WorkflowDetailPngView.as_view(), name="template-png"),
+    url(r'^workflow/(?P<pk>[0-9]+)/png/$', views.WorkflowDetailPngView.as_view(), name="template-png"),
 
 
     url(r'^workflowactivity/$', views.WorkflowActivityListView.as_view()),
